@@ -4,39 +4,49 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from data.fetch_data import get_intraday_data
+from models.model_xgb import FNOSmartAI
+from models.model_lstm import LSTMTrader
+from rl.reinforce_ai import RLTrader
+from simulator.paper_trader import PaperTrader
+from rl.self_learning import TradeMemory
 from symbol_screener_ai import get_ai_screened_symbols
-from ai_signal_lstm import train_lstm_model, predict_lstm_signal
 
 st.set_page_config(page_title="AI F&O Bot Dashboard", layout="wide")
-st.title("🤖 AI F&O Trading Bot - Dashboard")
+st.title("📊 AI F&O Trading Bot Dashboard")
 
-st.markdown("""
-This dashboard shows live symbol screening, AI model accuracy, and signal predictions.
-Run this during live market hours (Mon–Fri 9:15am–3:30pm).
-""")
+model_type = st.selectbox("Select AI Model", ["XGBoost", "LSTM", "Reinforcement Learning"])
+mode = st.selectbox("Mode", ["paper", "live"])
 
-with st.spinner("🔍 Running Screener & AI Models..."):
-    symbols, _ = get_ai_screened_symbols()
-    results = []
+symbols, _ = get_ai_screened_symbols()
+selected_symbol = st.selectbox("Select Symbol", symbols)
 
-    for symbol in symbols:
-        model, scaler, df = train_lstm_model(symbol)
-        if model:
-            signal = predict_lstm_signal(model, scaler, df)
-            acc = model.evaluate(*model.validation_data, verbose=0)[1] if hasattr(model, 'validation_data') else 0.0
-            results.append({
-                'Symbol': symbol,
-                'Signal': signal,
-                'Last Price': df['Close'].iloc[-1],
-                'Accuracy': round(acc, 3)
-            })
+if st.button("🔍 Run Analysis"):
+    df = get_intraday_data(selected_symbol)
+    if df.empty:
+        st.error("No data found for selected symbol")
+    else:
+        if model_type == "XGBoost":
+            model = FNOSmartAI()
+        elif model_type == "LSTM":
+            model = LSTMTrader()
+        else:
+            model = RLTrader()
 
-if not results:
-    st.error("⚠️ No data available. Try during market hours.")
-else:
-    df_result = pd.DataFrame(results)
-    st.dataframe(df_result)
+        acc = model.train(df)
+        signal = model.predict(df)
+        trade_type = "BUY CALL" if signal == 1 else "BUY PUT"
 
-    top = df_result.sort_values("Accuracy", ascending=False).head(1)
-    st.success(f"Top Symbol to Watch: **{top['Symbol'].values[0]}** → Signal: **{top['Signal'].values[0]}**")
+        price = df['Close'].iloc[-1]
+        trader = PaperTrader() if mode == "paper" else None
+        trader.place_trade(trade_type, price, selected_symbol)
+
+        st.metric("📌 Trade Type", trade_type)
+        st.metric("✅ Accuracy", f"{acc:.2f}")
+        st.metric("📈 Current Price", f"{price:.2f}")
+
+        st.subheader("Trade Log")
+        st.dataframe(pd.DataFrame(trader.get_trade_log()))
