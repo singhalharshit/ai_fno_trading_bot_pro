@@ -1,28 +1,42 @@
+# dashboard/app.py
+
 import streamlit as st
 import pandas as pd
 import sys
 import os
-
-# Add root path to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from symbol_screener_ai import get_ai_screened_symbols
+from ai_signal_lstm import train_lstm_model, predict_lstm_signal
 
-from data.fetch_data import get_intraday_data
-from models.model_xgb import FNOSmartAI
-from simulator.paper_trader import PaperTrader
+st.set_page_config(page_title="AI F&O Bot Dashboard", layout="wide")
+st.title("🤖 AI F&O Trading Bot - Dashboard")
 
-st.title("AI F&O Trading Bot - Dashboard")
+st.markdown("""
+This dashboard shows live symbol screening, AI model accuracy, and signal predictions.
+Run this during live market hours (Mon–Fri 9:15am–3:30pm).
+""")
 
-symbol = st.selectbox("Select Symbol", ["^NSEI", "RELIANCE.NS", "TCS.NS"])
-df = get_intraday_data(symbol)
+with st.spinner("🔍 Running Screener & AI Models..."):
+    symbols, _ = get_ai_screened_symbols()
+    results = []
 
-model = FNOSmartAI()
-acc = model.train(df)
-signal = model.predict(df)
+    for symbol in symbols:
+        model, scaler, df = train_lstm_model(symbol)
+        if model:
+            signal = predict_lstm_signal(model, scaler, df)
+            acc = model.evaluate(*model.validation_data, verbose=0)[1] if hasattr(model, 'validation_data') else 0.0
+            results.append({
+                'Symbol': symbol,
+                'Signal': signal,
+                'Last Price': df['Close'].iloc[-1],
+                'Accuracy': round(acc, 3)
+            })
 
-trader = PaperTrader()
-trade_type = "BUY CALL" if signal == 1 else "BUY PUT"
-trader.place_trade(trade_type, float(df['Close'].iloc[-1]), symbol)
+if not results:
+    st.error("⚠️ No data available. Try during market hours.")
+else:
+    df_result = pd.DataFrame(results)
+    st.dataframe(df_result)
 
-st.success(f"Model Accuracy: {acc:.2f}")
-st.write("Last Signal:", trade_type)
-st.dataframe(trader.get_trade_log())
+    top = df_result.sort_values("Accuracy", ascending=False).head(1)
+    st.success(f"Top Symbol to Watch: **{top['Symbol'].values[0]}** → Signal: **{top['Signal'].values[0]}**")

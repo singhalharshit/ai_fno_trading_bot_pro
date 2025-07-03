@@ -1,13 +1,10 @@
 class PaperTrader:
     def __init__(self):
-        self.trades = []
+        self.log = []
 
     def place_trade(self, signal, price, symbol):
-        self.trades.append({
-            "symbol": symbol,
-            "signal": signal,
-            "price": price,
-        })
+        self.log.append({'symbol': symbol, 'signal': signal, 'price': price})
 
     def get_trade_log(self):
-        return self.trades
+        import pandas as pd
+        return pd.DataFrame(self.log)

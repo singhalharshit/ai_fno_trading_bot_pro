@@ -4,22 +4,22 @@ from sklearn.metrics import accuracy_score
 
 class FNOSmartAI:
     def __init__(self):
-        self.model = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
-
-    def preprocess(self, df):
-        df['target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-        df.dropna(inplace=True)
-        features = ['Open', 'High', 'Low', 'Close', 'Volume', 'RSI', 'EMA_5', 'EMA_20', 'MACD', 'Signal_Line']
-        X = df[features]
-        y = df['target']
-        return train_test_split(X, y, test_size=0.2, random_state=42), features
+        self.model = XGBClassifier()
 
     def train(self, df):
-        (X_train, X_test, y_train, y_test), self.features = self.preprocess(df)
+        df['target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+        df.dropna(inplace=True)
+        X = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        y = df['target']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
         self.model.fit(X_train, y_train)
-        acc = accuracy_score(y_test, self.model.predict(X_test))
-        return acc
+        self.acc = accuracy_score(y_test, self.model.predict(X_test))
+        return self.acc
 
     def predict(self, df):
-        latest = df[self.features].iloc[-1]
-        return self.model.predict([latest])[0]
+        latest = df[['Open', 'High', 'Low', 'Close', 'Volume']].iloc[[-1]]
+        return self.model.predict(latest)[0]
+
+    def annotate(self, df):
+        df['signal'] = self.model.predict(df[['Open', 'High', 'Low', 'Close', 'Volume']])
+        return df
